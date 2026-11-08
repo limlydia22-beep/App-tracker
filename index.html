@@ -45,7 +45,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -166,17 +167,125 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   .fields { grid-template-columns: 1fr; }
   .groups { grid-template-columns: 1fr; }
 }
+
+/* Sign-in and account screens */
+.auth { min-height: 100%; display: grid; place-items: center; padding: 32px 16px; }
+.auth-card { width: 100%; max-width: 440px; padding: 28px; display: flex; flex-direction: column; gap: 16px; }
+.auth-card h1 { font-size: 1.8rem; }
+.auth-card h2 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; }
+.auth-card form { display: flex; flex-direction: column; gap: 14px; }
+.auth-card .btn-primary { width: 100%; }
+.hint { color: var(--muted); font-size: .95rem; margin: 0; }
+.brand-mark { width: 44px; height: 44px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
+.row-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.row-actions .btn { flex: 1; }
+input[type="password"] {
+  font: inherit; font-size: 1.05rem; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; width: 100%; min-height: 52px;
+}
+.user-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.who { font-weight: 700; }
+.role { font-size: .8rem; font-weight: 700; color: var(--ink); background: var(--accent-soft); padding: 2px 10px; border-radius: 99px; }
+.btn-link { font: inherit; font-size: .95rem; background: none; border: none; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 6px 4px; min-height: 36px; }
+.btn-link:hover { color: var(--accent); }
+
+/* Team panel */
+.team { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.team-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.team h2 { font-family: var(--font-display); font-size: 1.3rem; margin: 0; }
+.members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.member { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.member:last-child { border-bottom: none; }
+.member .name { font-weight: 700; }
+.member .uname { color: var(--muted); font-size: .95rem; }
+.member .status { font-size: .85rem; color: var(--muted); }
+.member .status.pending { color: var(--accent); font-weight: 700; }
+.member .acts { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.member .inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; width: 100%; }
+.member .inline input { flex: 1; min-width: 180px; min-height: 44px; padding: 8px 12px; }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.add-user .fields { grid-template-columns: 1fr 1fr 1fr auto; }
+@media (max-width: 760px) { .add-user .fields { grid-template-columns: 1fr 1fr; } .add-user .fields .btn-primary { grid-column: 1 / -1; } }
+@media (max-width: 440px) { .add-user .fields { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .head-right { align-items: flex-start; } .user-bar { justify-content: flex-start; } .btn-link:first-child { padding-left: 0; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
+<!-- Signed out: sign in -->
+<main class="auth" id="loginView" hidden>
+  <div class="card auth-card">
+    <div class="brand-mark" aria-hidden="true">✓</div>
+    <div>
+      <h1>Meeting Action Tracker</h1>
+      <p class="hint">Sign in with the username and password your admin gave you.</p>
+    </div>
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="loginUser">Username</label>
+        <input type="text" id="loginUser" autocomplete="username" autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="loginPass">Password</label>
+        <input type="password" id="loginPass" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" id="loginBtn">Sign in</button>
+      <p class="error" id="loginError" role="alert"></p>
+    </form>
+  </div>
+</main>
+
+<!-- First sign-in, or user asked to change password -->
+<main class="auth" id="passwordView" hidden>
+  <div class="card auth-card">
+    <div>
+      <h2 id="pwTitle">Set your own password</h2>
+      <p class="hint" id="pwHint">You signed in with a starting password. Choose a new one to continue.</p>
+    </div>
+    <form id="pwForm" novalidate>
+      <div class="field">
+        <label for="pwNew">New password</label>
+        <input type="password" id="pwNew" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="pwConfirm">Type it again</label>
+        <input type="password" id="pwConfirm" autocomplete="new-password">
+      </div>
+      <p class="hint">At least 8 characters. It can't be "password" or your username.</p>
+      <div class="row-actions">
+        <button type="submit" class="btn btn-primary" id="pwBtn">Save password</button>
+        <button type="button" class="btn btn-ghost" id="pwCancel">Cancel</button>
+      </div>
+      <p class="error" id="pwError" role="alert"></p>
+    </form>
+  </div>
+</main>
+
+<!-- Signed in but no team profile -->
+<main class="auth" id="noAccessView" hidden>
+  <div class="card auth-card">
+    <h2>This account isn't on the team yet</h2>
+    <p class="hint">You're signed in, but your account hasn't been added to the action tracker. Ask an admin to add you.</p>
+    <button type="button" class="btn btn-ghost" id="noAccessSignOut">Sign out</button>
+  </div>
+</main>
+
+<div class="wrap" id="appView" hidden>
   <header>
     <div>
       <h1>Meeting Action Tracker</h1>
-      <p class="sub">Every agreed action gets an owner and a due date. Shared with everyone who has this link.</p>
+      <p class="sub">Every agreed action gets an owner and a due date.</p>
     </div>
     <div class="head-right">
+      <div class="user-bar">
+        <span>Signed in as <span class="who" id="whoName"></span></span>
+        <span class="role" id="whoRole" hidden>Admin</span>
+      </div>
+      <div class="user-bar">
+        <button type="button" class="btn-link" id="teamBtn" hidden>Team</button>
+        <button type="button" class="btn-link" id="changePwBtn">Change password</button>
+        <button type="button" class="btn-link" id="signOutBtn">Sign out</button>
+      </div>
       <div class="today" id="todayLabel"></div>
       <div class="sync" id="sync" role="status"><span class="dot" aria-hidden="true"></span><span id="syncText">Connecting…</span></div>
     </div>
@@ -186,6 +295,34 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     <span id="errorText"></span>
     <button type="button" class="btn btn-ghost" id="retryBtn">Try again</button>
   </div>
+
+  <section class="card team" id="teamPanel" hidden aria-labelledby="teamTitle">
+    <div class="team-head">
+      <h2 id="teamTitle">Team</h2>
+      <button type="button" class="btn btn-ghost" id="teamClose">Close</button>
+    </div>
+    <ul class="members" id="memberList"></ul>
+    <form class="add-user" id="addUserForm" novalidate>
+      <h2 style="font-size:1.1rem;margin:0 0 10px">Add a team member</h2>
+      <div class="fields">
+        <div class="field">
+          <label for="newUsername">Username</label>
+          <input type="text" id="newUsername" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="e.g. siti">
+        </div>
+        <div class="field">
+          <label for="newDisplay">Display name</label>
+          <input type="text" id="newDisplay" autocomplete="off" placeholder="e.g. Siti">
+        </div>
+        <div class="field">
+          <label for="newPassword">Starting password</label>
+          <input type="text" id="newPassword" autocomplete="off" spellcheck="false" placeholder="At least 8 characters">
+        </div>
+        <button type="submit" class="btn btn-primary" id="addUserBtn">Add member</button>
+      </div>
+      <p class="hint" style="margin-top:8px">They'll be asked to choose their own password the first time they sign in.</p>
+      <p class="error" id="addUserError" role="alert"></p>
+    </form>
+  </section>
 
   <section class="stats" aria-label="Summary">
     <div class="card stat"><span class="num" id="openCount">0</span><span class="lbl">Open</span></div>
@@ -245,11 +382,18 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.js"></script>
 <script>
 (function () {
-  // Supabase connection. The publishable key is designed to be public;
-  // what it can do is limited by the row level security policies on the table.
+  // Supabase connection. The publishable key is designed to be public: it only lets people
+  // sign in. Reading and changing actions needs a signed-in user who has a team profile
+  // (enforced by row level security in the database).
   const SUPABASE_URL = "https://zzqkkecgnrlgxyevwfbx.supabase.co";
   const SUPABASE_KEY = "sb_publishable_bsSI0sDuAqj4gxWkJlD4Dw_QG3JLeQC";
   const TABLE = "actions";
+  const EMAIL_DOMAIN = "actiontracker.local";   // usernames sign in as <username>@actiontracker.local
+
+  let me = null;               // current user's profile row
+  let team = [];               // all team profiles
+  let channel = null;
+  let pwMode = "required";     // "required" (first sign-in) or "optional" (user chose to change)
 
   const db = window.supabase && window.supabase.createClient
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -316,7 +460,9 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   }
 
   async function refresh() {
+    if (!me || me.must_change_password) return;
     try {
+      await loadTeam();
       await fetchAll();
       loading = false;
       clearError();
@@ -346,10 +492,16 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     }
   }
 
+  function unsubscribe() {
+    if (channel) { db.removeChannel(channel); channel = null; }
+    realtimeOn = false;
+  }
+
   function subscribe() {
-    if (!db) return;
-    db.channel("actions-feed")
+    if (!db || channel) return;
+    channel = db.channel("actions-feed")
       .on("postgres_changes", { event: "*", schema: "public", table: TABLE }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleRefresh)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") { realtimeOn = true; if (!loading) setSync("live", "Live · updates appear automatically"); }
         else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") { realtimeOn = false; }
@@ -383,7 +535,7 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     $("todayLabel").textContent = "Today: " + new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     $("exampleNotice").hidden = !acts.some(a => a.example);
 
-    const owners = [...new Set(acts.map(a => a.owner))].sort((x, y) => x.localeCompare(y));
+    const owners = [...new Set(acts.map(a => a.owner).concat(team.map(p => p.display_name)))].sort((x, y) => x.localeCompare(y));
     $("ownerList").innerHTML = owners.map(o => '<option value="' + esc(o) + '"></option>').join("");
 
     const shown = acts.filter(a =>
@@ -562,17 +714,236 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scheduleRefresh(); });
   setInterval(refresh, 60000);
 
-  // ---------- start ----------
-  $("dueInput").value = addDays(7);
-  render();
-  if (!db) {
-    loading = false;
-    setSync("error", "Not connected");
-    showError("The database library didn't load. Check your internet connection and reload the page.");
+  // ---------- views ----------
+  function showView(name) {
+    ["loginView", "passwordView", "noAccessView", "appView"].forEach(v => { $(v).hidden = v !== name; });
+  }
+
+  function usernameToEmail(u) {
+    const v = u.trim().toLowerCase();
+    return v.includes("@") ? v : v + "@" + EMAIL_DOMAIN;
+  }
+
+  async function loadTeam() {
+    const { data, error } = await db.from("profiles").select("*").order("display_name");
+    if (error) throw error;
+    team = data;
+    const mine = team.find(p => me && p.id === me.id);
+    if (mine) me = mine;
+    renderTeam();
+  }
+
+  // Decide what to show for the current session.
+  let sessionUserId = null;
+  async function onSession(session) {
+    const uid = session ? session.user.id : null;
+    if (!uid) {
+      sessionUserId = null; me = null; team = []; state.actions = []; loading = true;
+      unsubscribe();
+      $("teamPanel").hidden = true;
+      $("loginPass").value = "";
+      showView("loginView");
+      setTimeout(() => $("loginUser").focus(), 0);
+      return;
+    }
+    if (uid === sessionUserId && me) return;   // token refresh, nothing to do
+    sessionUserId = uid;
+    const { data, error } = await db.from("profiles").select("*").eq("id", uid).maybeSingle();
+    if (error) {
+      showView("loginView");
+      $("loginError").textContent = "Signed in, but couldn't load your profile. Try again." + errText(error);
+      return;
+    }
+    if (!data) { me = null; showView("noAccessView"); return; }
+    me = data;
+    if (me.must_change_password) { openPasswordView("required"); return; }
+    enterApp();
+  }
+
+  function enterApp() {
+    $("whoName").textContent = me.display_name;
+    $("whoRole").hidden = !me.is_admin;
+    $("teamBtn").hidden = !me.is_admin;
+    showView("appView");
+    loading = state.actions.length === 0;
     render();
-  } else {
     refresh();
     subscribe();
+  }
+
+  function openPasswordView(mode) {
+    pwMode = mode;
+    $("pwTitle").textContent = mode === "required" ? "Set your own password" : "Change your password";
+    $("pwHint").textContent = mode === "required"
+      ? "You signed in with a starting password. Choose a new one to continue."
+      : "Choose a new password for " + me.display_name + ".";
+    $("pwCancel").textContent = mode === "required" ? "Sign out" : "Cancel";
+    $("pwNew").value = ""; $("pwConfirm").value = ""; $("pwError").textContent = "";
+    showView("passwordView");
+    setTimeout(() => $("pwNew").focus(), 0);
+  }
+
+  // ---------- sign in / out ----------
+  $("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const user = $("loginUser").value, pass = $("loginPass").value;
+    if (!user.trim() || !pass) { $("loginError").textContent = "Enter your username and password."; return; }
+    $("loginError").textContent = "";
+    $("loginBtn").disabled = true; $("loginBtn").textContent = "Signing in…";
+    const { error } = await db.auth.signInWithPassword({ email: usernameToEmail(user), password: pass });
+    $("loginBtn").disabled = false; $("loginBtn").textContent = "Sign in";
+    if (error) {
+      $("loginError").textContent = /invalid login/i.test(error.message)
+        ? "That username and password don't match. Check them and try again."
+        : "Couldn't sign in." + errText(error);
+      $("loginPass").select();
+    }
+    // On success, onAuthStateChange takes over.
+  });
+
+  async function signOut() {
+    unsubscribe();
+    await db.auth.signOut();
+  }
+  $("signOutBtn").addEventListener("click", signOut);
+  $("noAccessSignOut").addEventListener("click", signOut);
+
+  $("changePwBtn").addEventListener("click", () => openPasswordView("optional"));
+  $("pwCancel").addEventListener("click", () => { if (pwMode === "required") signOut(); else enterApp(); });
+
+  $("pwForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const p1 = $("pwNew").value, p2 = $("pwConfirm").value;
+    const err = p1.length < 8 ? "Use at least 8 characters."
+      : p1.toLowerCase() === "password" ? "Choose something other than \"password\"."
+      : p1.toLowerCase() === me.username ? "Your password can't be your username."
+      : p1 !== p2 ? "The two passwords don't match."
+      : null;
+    if (err) { $("pwError").textContent = err; return; }
+    $("pwBtn").disabled = true; $("pwBtn").textContent = "Saving…";
+    const { error } = await db.auth.updateUser({ password: p1 });
+    if (error) {
+      $("pwBtn").disabled = false; $("pwBtn").textContent = "Save password";
+      $("pwError").textContent = /different from the old/i.test(error.message)
+        ? "That's your current password. Choose a new one."
+        : "Couldn't save your password." + errText(error);
+      return;
+    }
+    if (me.must_change_password) {
+      const r = await db.from("profiles").update({ must_change_password: false }).eq("id", me.id);
+      if (!r.error) me.must_change_password = false;
+    }
+    $("pwBtn").disabled = false; $("pwBtn").textContent = "Save password";
+    enterApp();
+    toast("Password saved.");
+  });
+
+  // ---------- team (admins) ----------
+  async function adminCall(body) {
+    const r = await db.functions.invoke("admin-users", { body });
+    if (r.error) {
+      let msg = r.error.message;
+      try { const j = await r.error.context.json(); if (j && j.error) msg = j.error; } catch (e) {}
+      throw new Error(msg);
+    }
+    return r.data;
+  }
+
+  let openRow = null;   // { id, mode: "reset" | "remove" }
+  function renderTeam() {
+    if (!me || !me.is_admin) return;
+    $("memberList").innerHTML = team.map(p => {
+      const self = p.id === me.id;
+      const row = openRow && openRow.id === p.id ? openRow.mode : null;
+      let extra = "";
+      if (row === "reset") {
+        extra = '<div class="inline"><label class="sr" for="rp-' + esc(p.id) + '" style="font-weight:400">New starting password</label>' +
+          '<input type="text" id="rp-' + esc(p.id) + '" placeholder="At least 8 characters" autocomplete="off" spellcheck="false">' +
+          '<button type="button" class="btn btn-primary" style="min-height:44px;padding:8px 16px" data-act="do-reset" data-id="' + esc(p.id) + '">Set password</button>' +
+          '<button type="button" class="btn btn-ghost" data-act="cancel">Cancel</button></div>';
+      } else if (row === "remove") {
+        extra = '<div class="inline"><span>Remove ' + esc(p.display_name) + '? They won’t be able to sign in. Their actions stay on the list.</span>' +
+          '<button type="button" class="btn btn-ghost btn-danger" data-act="do-remove" data-id="' + esc(p.id) + '">Remove</button>' +
+          '<button type="button" class="btn btn-ghost" data-act="cancel">Cancel</button></div>';
+      }
+      return '<li class="member">' +
+        '<div><div class="name">' + esc(p.display_name) + (p.is_admin ? ' <span class="role">Admin</span>' : '') + '</div>' +
+        '<div class="uname">Username: ' + esc(p.username) + '</div></div>' +
+        '<span class="status' + (p.must_change_password ? ' pending' : '') + '">' +
+          (p.must_change_password ? "Hasn't set own password yet" : "Active") + '</span>' +
+        '<div class="acts">' +
+          (self ? '<span class="status">You</span>' :
+            '<button type="button" class="btn btn-ghost" data-act="reset" data-id="' + esc(p.id) + '">Reset password</button>' +
+            '<button type="button" class="btn btn-ghost btn-danger" data-act="remove" data-id="' + esc(p.id) + '">Remove</button>') +
+        '</div>' + extra +
+      '</li>';
+    }).join("");
+  }
+
+  $("teamBtn").addEventListener("click", () => {
+    $("teamPanel").hidden = !$("teamPanel").hidden;
+    if (!$("teamPanel").hidden) { renderTeam(); $("teamPanel").scrollIntoView({ block: "start", behavior: "smooth" }); }
+  });
+  $("teamClose").addEventListener("click", () => { $("teamPanel").hidden = true; openRow = null; });
+
+  $("memberList").addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-act]");
+    if (!b) return;
+    const act = b.dataset.act, id = b.dataset.id;
+    const p = team.find(x => x.id === id);
+    if (act === "cancel") { openRow = null; renderTeam(); return; }
+    if (act === "reset" || act === "remove") {
+      openRow = { id, mode: act }; renderTeam();
+      if (act === "reset") setTimeout(() => { const i = document.getElementById("rp-" + id); if (i) i.focus(); }, 0);
+      return;
+    }
+    if (act === "do-reset") {
+      const pw = document.getElementById("rp-" + id).value;
+      if (pw.length < 8) { toast("The starting password must be at least 8 characters."); return; }
+      b.disabled = true;
+      try { await adminCall({ action: "reset", userId: id, password: pw }); openRow = null; await loadTeam(); toast("Password reset for " + p.display_name + ". They'll choose a new one when they sign in."); }
+      catch (err) { b.disabled = false; toast("Couldn't reset the password: " + err.message); }
+    }
+    if (act === "do-remove") {
+      b.disabled = true;
+      try { await adminCall({ action: "remove", userId: id }); openRow = null; await loadTeam(); toast(p.display_name + " was removed."); }
+      catch (err) { b.disabled = false; toast("Couldn't remove " + p.display_name + ": " + err.message); }
+    }
+  });
+
+  $("addUserForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = $("newUsername").value.trim().toLowerCase();
+    const displayName = $("newDisplay").value.trim();
+    const password = $("newPassword").value;
+    const err = !/^[a-z0-9][a-z0-9._-]{1,29}$/.test(username)
+        ? "Usernames are 2–30 characters: lowercase letters, numbers, dots, dashes or underscores."
+      : password.length < 8 ? "The starting password must be at least 8 characters."
+      : null;
+    if (err) { $("addUserError").textContent = err; return; }
+    $("addUserError").textContent = "";
+    $("addUserBtn").disabled = true; $("addUserBtn").textContent = "Adding…";
+    try {
+      await adminCall({ action: "create", username, displayName: displayName || username, password });
+      $("newUsername").value = ""; $("newDisplay").value = ""; $("newPassword").value = "";
+      await loadTeam();
+      render();
+      toast((displayName || username) + " added. They can sign in as “" + username + "”.");
+    } catch (ex) {
+      $("addUserError").textContent = ex.message;
+    }
+    $("addUserBtn").disabled = false; $("addUserBtn").textContent = "Add member";
+  });
+
+  // ---------- start ----------
+  $("dueInput").value = addDays(7);
+  if (!db) {
+    showView("loginView");
+    $("loginError").textContent = "The app couldn't load. Check your internet connection and reload the page.";
+    $("loginBtn").disabled = true;
+  } else {
+    // Don't call Supabase inside the auth callback itself; hand off to the next tick.
+    db.auth.onAuthStateChange((_event, session) => { setTimeout(() => onSession(session), 0); });
   }
 })();
 </script>
