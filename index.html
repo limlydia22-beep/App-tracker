@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meeting Action Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap" rel="stylesheet">
+<style>
+/* Layout: summary strip on top, add-action card, then one card per owner in a responsive grid */
+:root {
+  --bg: #f3f2ef;
+  --surface: #ffffff;
+  --ink: #2b2a28;
+  --muted: #6f6c66;
+  --line: #e2dfd9;
+  --accent: #e8702a;
+  --accent-ink: #ffffff;
+  --accent-soft: #fbeadf;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --ok: #3f7d58;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(43,42,40,.06), 0 4px 14px rgba(43,42,40,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1b1a; --surface: #262523; --ink: #ecebe8; --muted: #a29f99; --line: #3a3835;
+    --accent: #f08a46; --accent-ink: #1c1b1a; --accent-soft: #3d2c20;
+    --danger: #f2877d; --danger-soft: #3d2423; --ok: #7dbb93;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1b1a; --surface: #262523; --ink: #ecebe8; --muted: #a29f99; --line: #3a3835;
+  --accent: #f08a46; --accent-ink: #1c1b1a; --accent-soft: #3d2c20;
+  --danger: #f2877d; --danger-soft: #3d2423; --ok: #7dbb93;
+  --shadow: 0 1px 2px rgba(0,0,0,.3);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 19px;
+  line-height: 1.5;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px; display: flex; flex-direction: column; gap: 24px; }
+
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-size: 2.1rem; line-height: 1.1; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; }
+.today { color: var(--muted); font-size: .95rem; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+
+/* Summary */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.stat { padding: 16px 20px; display: flex; flex-direction: column; gap: 2px; }
+.stat .num { font-family: var(--font-display); font-size: 2.4rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .lbl { color: var(--muted); font-size: 1rem; }
+.stat.overdue .num { color: var(--danger); }
+.stat.overdue.zero .num { color: var(--muted); }
+.stat.done .num { color: var(--ok); }
+.progress { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 10px; }
+.progress span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .3s ease; }
+
+/* Add form */
+.add { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.add h2, .group h2 { font-family: var(--font-display); font-size: 1.3rem; margin: 0; }
+.fields { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+label { font-size: .95rem; color: var(--muted); font-weight: 700; }
+input[type="text"], input[type="date"] {
+  font: inherit; font-size: 1.05rem; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; width: 100%; min-height: 52px;
+}
+input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn {
+  font: inherit; font-weight: 700; font-size: 1.05rem; border-radius: 10px; padding: 12px 22px; min-height: 52px;
+  border: 1px solid transparent; cursor: pointer;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); min-height: 44px; padding: 8px 16px; font-size: .95rem; }
+.btn-ghost:hover { border-color: var(--muted); }
+.error { color: var(--danger); font-size: .95rem; min-height: 1.4em; margin: 0; }
+
+/* Toolbar */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: inherit; font-size: .95rem; padding: 8px 16px; border-radius: 99px; cursor: pointer;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); min-height: 44px;
+}
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Owner groups */
+.groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
+.group { padding: 18px 20px 10px; display: flex; flex-direction: column; gap: 6px; }
+.group-head { display: flex; align-items: center; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.avatar {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--accent-soft); color: var(--ink); font-weight: 700; font-family: var(--font-display);
+}
+.group-head .meta { color: var(--muted); font-size: .9rem; }
+.group-head .flag { margin-left: auto; font-size: .85rem; font-weight: 700; color: var(--danger); background: var(--danger-soft); padding: 3px 10px; border-radius: 99px; white-space: nowrap; }
+
+ul.items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+li.item {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
+  padding: 12px 8px 12px 10px; border-bottom: 1px solid var(--line); border-left: 4px solid transparent; border-radius: 4px;
+}
+li.item:last-child { border-bottom: none; }
+li.item.is-overdue { border-left-color: var(--danger); background: var(--danger-soft); }
+li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
+.check { width: 26px; height: 26px; margin: 3px 0 0; accent-color: var(--accent); cursor: pointer; }
+.text { overflow-wrap: anywhere; }
+.due { display: block; font-size: .9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.is-overdue .due { color: var(--danger); font-weight: 700; }
+.due.today { color: var(--accent); font-weight: 700; }
+.del {
+  background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.4rem; line-height: 1;
+  width: 40px; height: 40px; border-radius: 8px;
+}
+.del:hover { background: var(--bg); color: var(--danger); }
+
+.empty { padding: 32px 20px; text-align: center; color: var(--muted); }
+.notice { padding: 12px 16px; background: var(--accent-soft); border-radius: 10px; font-size: .95rem; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.notice[hidden] { display: none; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink); color: var(--surface); padding: 12px 18px; border-radius: 12px;
+  display: flex; gap: 14px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.2); font-size: 1rem; max-width: calc(100% - 32px);
+}
+.toast[hidden] { display: none; }
+.toast button { font: inherit; font-weight: 700; background: none; border: none; color: var(--accent); cursor: pointer; padding: 4px 6px; }
+
+@media (max-width: 760px) {
+  .fields { grid-template-columns: 1fr 1fr; }
+  .fields .field-action { grid-column: 1 / -1; }
+  .fields .btn-primary { grid-column: 1 / -1; }
+}
+@media (max-width: 440px) {
+  body { font-size: 18px; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat.overdue { grid-column: 1 / -1; }
+  .fields { grid-template-columns: 1fr; }
+  .groups { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Meeting Action Tracker</h1>
+      <p class="sub">Every agreed action gets an owner and a due date.</p>
+    </div>
+    <div class="today" id="todayLabel"></div>
+  </header>
+
+  <div class="notice" id="storageNotice" hidden>
+    <span>This browser isn't saving data, so actions will be lost when you close the page.</span>
+  </div>
+
+  <section class="stats" aria-label="Summary">
+    <div class="card stat"><span class="num" id="openCount">0</span><span class="lbl">Open</span></div>
+    <div class="card stat done"><span class="num" id="doneCount">0</span><span class="lbl">Done</span>
+      <div class="progress" aria-hidden="true"><span id="progressBar" style="width:0%"></span></div>
+    </div>
+    <div class="card stat overdue" id="overdueStat"><span class="num" id="overdueCount">0</span><span class="lbl">Overdue</span></div>
+  </section>
+
+  <form class="card add" id="addForm" novalidate>
+    <h2>Add an action</h2>
+    <div class="fields">
+      <div class="field field-action">
+        <label for="actionInput">Action</label>
+        <input type="text" id="actionInput" placeholder="e.g. Send revised budget to committee" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ownerInput">Owner</label>
+        <input type="text" id="ownerInput" list="ownerList" placeholder="Name" autocomplete="off">
+        <datalist id="ownerList"></datalist>
+      </div>
+      <div class="field">
+        <label for="dueInput">Due date</label>
+        <input type="date" id="dueInput">
+      </div>
+      <button type="submit" class="btn btn-primary">Add action</button>
+    </div>
+    <p class="error" id="formError" role="alert"></p>
+  </form>
+
+  <div class="notice" id="exampleNotice" hidden>
+    <span>These are example actions so you can see how it works.</span>
+    <button type="button" class="btn btn-ghost" id="clearExamples">Remove examples</button>
+  </div>
+
+  <div class="toolbar">
+    <div class="filters" role="group" aria-label="Show">
+      <button type="button" class="chip" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" class="chip" data-filter="open" aria-pressed="false">Open</button>
+      <button type="button" class="chip" data-filter="overdue" aria-pressed="false">Overdue</button>
+      <button type="button" class="chip" data-filter="done" aria-pressed="false">Done</button>
+    </div>
+    <div class="tools">
+      <button type="button" class="btn btn-ghost" id="copyBtn">Copy open actions</button>
+      <button type="button" class="btn btn-ghost" id="clearDone">Clear done</button>
+    </div>
+  </div>
+
+  <section class="groups" id="groups" aria-live="polite"></section>
+</div>
+
+<div class="toast" id="toast" hidden role="status">
+  <span id="toastMsg"></span>
+  <button type="button" id="toastUndo" hidden>Undo</button>
+</div>
+
+<script>
+(function () {
+  const KEY = "meeting-action-tracker-v1";
+  let storageOK = true;
+  let state = { actions: [], examples: false };
+  let filter = "all";
+  let lastDeleted = null;
+  let toastTimer = null;
+
+  // ---------- dates (local, YYYY-MM-DD) ----------
+  function isoLocal(d) {
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+  function todayISO() { return isoLocal(new Date()); }
+  function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return isoLocal(d); }
+  function daysBetween(a, b) {
+    const pa = a.split("-").map(Number), pb = b.split("-").map(Number);
+    return Math.round((Date.UTC(pb[0], pb[1] - 1, pb[2]) - Date.UTC(pa[0], pa[1] - 1, pa[2])) / 86400000);
+  }
+  function fmtDate(iso) {
+    const p = iso.split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  }
+  function isOverdue(a) { return !a.done && a.due < todayISO(); }
+
+  // ---------- storage ----------
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) { state = JSON.parse(raw); return; }
+    } catch (e) { storageOK = false; }
+    state = { actions: seed(), examples: true };
+    save();
+  }
+  function save() {
+    if (!storageOK) return;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch (e) { storageOK = false; }
+    document.getElementById("storageNotice").hidden = storageOK;
+  }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function seed() {
+    const mk = (text, owner, dueOffset, done) => ({ id: uid(), text, owner, due: addDays(dueOffset), done: !!done, created: Date.now(), example: true });
+    return [
+      mk("Circulate minutes of the planning meeting", "Aisha", -3),
+      mk("Confirm venue booking for the March event", "Aisha", 2),
+      mk("Send updated vendor quotes to the team", "Marcus", -1),
+      mk("Draft volunteer roster for next quarter", "Marcus", 6),
+      mk("Share last month's attendance figures", "Marcus", -5, true),
+      mk("Book follow-up meeting with the partner agency", "Wei Ling", 0),
+      mk("Review the new onboarding checklist", "Wei Ling", 9, true)
+    ];
+  }
+
+  // ---------- render ----------
+  const $ = (id) => document.getElementById(id);
+  function esc(s) { return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
+
+  function dueLabel(a) {
+    const t = todayISO();
+    if (a.done) return "Done · was due " + fmtDate(a.due);
+    const diff = daysBetween(t, a.due);
+    if (diff < 0) return "Overdue by " + (-diff) + (diff === -1 ? " day" : " days") + " · " + fmtDate(a.due);
+    if (diff === 0) return "Due today";
+    if (diff === 1) return "Due tomorrow";
+    return "Due " + fmtDate(a.due) + " · in " + diff + " days";
+  }
+
+  function render() {
+    const acts = state.actions;
+    const open = acts.filter(a => !a.done).length;
+    const done = acts.length - open;
+    const overdue = acts.filter(isOverdue).length;
+    $("openCount").textContent = open;
+    $("doneCount").textContent = done;
+    $("overdueCount").textContent = overdue;
+    $("overdueStat").classList.toggle("zero", overdue === 0);
+    $("progressBar").style.width = acts.length ? Math.round(done / acts.length * 100) + "%" : "0%";
+    $("todayLabel").textContent = "Today: " + new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("exampleNotice").hidden = !acts.some(a => a.example);
+
+    // owner suggestions
+    const owners = [...new Set(acts.map(a => a.owner))].sort((x, y) => x.localeCompare(y));
+    $("ownerList").innerHTML = owners.map(o => '<option value="' + esc(o) + '"></option>').join("");
+
+    // filter
+    const shown = acts.filter(a =>
+      filter === "all" ? true : filter === "open" ? !a.done : filter === "done" ? a.done : isOverdue(a));
+
+    // group by owner (case-insensitive)
+    const groups = new Map();
+    shown.forEach(a => {
+      const k = a.owner.trim().toLowerCase();
+      if (!groups.has(k)) groups.set(k, { name: a.owner.trim(), items: [] });
+      groups.get(k).items.push(a);
+    });
+
+    const container = $("groups");
+    if (!groups.size) {
+      const msg = !acts.length ? "No actions yet. Add the first one from your meeting above."
+        : filter === "overdue" ? "Nothing overdue. Nice work."
+        : filter === "done" ? "Nothing ticked off yet."
+        : "No open actions. Everything agreed has been done.";
+      container.innerHTML = '<div class="card empty" style="grid-column:1/-1">' + msg + '</div>';
+      return;
+    }
+
+    // owners with overdue items first, then by name
+    const sorted = [...groups.values()].sort((g1, g2) => {
+      const o1 = g1.items.filter(isOverdue).length, o2 = g2.items.filter(isOverdue).length;
+      return (o2 > 0) - (o1 > 0) || g1.name.localeCompare(g2.name);
+    });
+
+    container.innerHTML = sorted.map(g => {
+      g.items.sort((a, b) => (a.done - b.done) || a.due.localeCompare(b.due));
+      const openN = g.items.filter(a => !a.done).length;
+      const odN = g.items.filter(isOverdue).length;
+      return '<article class="card group">' +
+        '<div class="group-head">' +
+          '<div class="avatar" aria-hidden="true">' + esc(initials(g.name)) + '</div>' +
+          '<div><h2>' + esc(g.name) + '</h2><div class="meta">' + openN + ' open · ' + (g.items.length - openN) + ' done</div></div>' +
+          (odN ? '<span class="flag">' + odN + ' overdue</span>' : '') +
+        '</div>' +
+        '<ul class="items">' + g.items.map(itemHTML).join("") + '</ul>' +
+      '</article>';
+    }).join("");
+  }
+
+  function itemHTML(a) {
+    const od = isOverdue(a);
+    const today = !a.done && a.due === todayISO();
+    const cid = "chk-" + a.id;
+    return '<li class="item' + (od ? " is-overdue" : "") + (a.done ? " is-done" : "") + '" data-id="' + a.id + '">' +
+      '<input type="checkbox" class="check" id="' + cid + '"' + (a.done ? " checked" : "") + '>' +
+      '<label for="' + cid + '" style="color:inherit;font-weight:400;font-size:inherit;cursor:pointer">' +
+        '<span class="text">' + esc(a.text) + '</span>' +
+        '<span class="due' + (today ? " today" : "") + '">' + dueLabel(a) + '</span>' +
+      '</label>' +
+      '<button type="button" class="del" aria-label="Delete action: ' + esc(a.text) + '" title="Delete">×</button>' +
+    '</li>';
+  }
+
+  // ---------- toast ----------
+  function toast(msg, undo) {
+    $("toastMsg").textContent = msg;
+    $("toastUndo").hidden = !undo;
+    $("toast").hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { $("toast").hidden = true; lastDeleted = null; }, 5000);
+  }
+
+  // ---------- events ----------
+  $("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = $("actionInput").value.trim();
+    const owner = $("ownerInput").value.trim();
+    const due = $("dueInput").value;
+    const missing = [!text && "the action", !owner && "an owner", !due && "a due date"].filter(Boolean);
+    if (missing.length) {
+      $("formError").textContent = "Please add " + missing.join(", ").replace(/, ([^,]*)$/, " and $1") + ".";
+      (!text ? $("actionInput") : !owner ? $("ownerInput") : $("dueInput")).focus();
+      return;
+    }
+    // reuse existing owner spelling if the name matches
+    const match = state.actions.find(a => a.owner.trim().toLowerCase() === owner.toLowerCase());
+    state.actions.push({ id: uid(), text, owner: match ? match.owner : owner, due, done: false, created: Date.now() });
+    save(); render();
+    $("formError").textContent = "";
+    $("actionInput").value = "";
+    $("actionInput").focus();
+    toast("Action added for " + (match ? match.owner : owner) + ".");
+  });
+
+  $("groups").addEventListener("change", (e) => {
+    if (!e.target.classList.contains("check")) return;
+    const id = e.target.closest("li").dataset.id;
+    const a = state.actions.find(x => x.id === id);
+    if (a) { a.done = e.target.checked; a.doneAt = a.done ? Date.now() : null; save(); render(); }
+  });
+
+  $("groups").addEventListener("click", (e) => {
+    const btn = e.target.closest(".del");
+    if (!btn) return;
+    const id = btn.closest("li").dataset.id;
+    const idx = state.actions.findIndex(x => x.id === id);
+    if (idx < 0) return;
+    lastDeleted = { item: state.actions[idx], idx };
+    state.actions.splice(idx, 1);
+    save(); render();
+    toast("Action deleted.", true);
+  });
+
+  $("toastUndo").addEventListener("click", () => {
+    if (!lastDeleted) return;
+    if (Array.isArray(lastDeleted.items)) state.actions = lastDeleted.items;
+    else state.actions.splice(lastDeleted.idx, 0, lastDeleted.item);
+    lastDeleted = null;
+    save(); render();
+    $("toast").hidden = true;
+  });
+
+  document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+    filter = c.dataset.filter;
+    document.querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", String(x === c)));
+    render();
+  }));
+
+  $("clearDone").addEventListener("click", () => {
+    const n = state.actions.filter(a => a.done).length;
+    if (!n) { toast("No done actions to clear."); return; }
+    lastDeleted = { items: state.actions.slice() };
+    state.actions = state.actions.filter(a => !a.done);
+    save(); render();
+    toast("Cleared " + n + " done " + (n === 1 ? "action" : "actions") + ".", true);
+  });
+
+  $("clearExamples").addEventListener("click", () => {
+    lastDeleted = { items: state.actions.slice() };
+    state.actions = state.actions.filter(a => !a.example);
+    save(); render();
+    toast("Examples removed.", true);
+  });
+
+  $("copyBtn").addEventListener("click", async () => {
+    const open = state.actions.filter(a => !a.done);
+    if (!open.length) { toast("No open actions to copy."); return; }
+    const byOwner = {};
+    open.forEach(a => (byOwner[a.owner] = byOwner[a.owner] || []).push(a));
+    const lines = ["Open actions as at " + fmtDate(todayISO()), ""];
+    Object.keys(byOwner).sort().forEach(o => {
+      lines.push(o);
+      byOwner[o].sort((a, b) => a.due.localeCompare(b.due)).forEach(a =>
+        lines.push("  - " + a.text + " (due " + fmtDate(a.due) + (isOverdue(a) ? ", OVERDUE" : "") + ")"));
+      lines.push("");
+    });
+    try { await navigator.clipboard.writeText(lines.join("\n").trim()); toast("Open actions copied. Paste them into your minutes or email."); }
+    catch (e) { toast("Couldn't copy here. Try again from your browser directly."); }
+  });
+
+  // refresh overdue status if the page stays open past midnight
+  let lastDay = todayISO();
+  setInterval(() => { if (todayISO() !== lastDay) { lastDay = todayISO(); render(); } }, 60000);
+
+  // default due date: one week out
+  $("dueInput").value = addDays(7);
+  load();
+  document.getElementById("storageNotice").hidden = storageOK;
+  render();
+})();
+</script>
+</body>
+</html>
