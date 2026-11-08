@@ -58,7 +58,14 @@ body {
 header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
 h1 { font-family: var(--font-display); font-size: 2.1rem; line-height: 1.1; margin: 0; text-wrap: balance; }
 .sub { color: var(--muted); margin: 4px 0 0; }
+.head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .today { color: var(--muted); font-size: .95rem; }
+.sync { display: inline-flex; gap: 8px; align-items: center; font-size: .9rem; color: var(--muted); }
+.sync .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.sync.live .dot { background: var(--ok); }
+.sync.error { color: var(--danger); }
+.sync.error .dot { background: var(--danger); }
+@media (max-width: 440px) { .head-right { align-items: flex-start; } }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 
@@ -137,6 +144,7 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
 .empty { padding: 32px 20px; text-align: center; color: var(--muted); }
 .notice { padding: 12px 16px; background: var(--accent-soft); border-radius: 10px; font-size: .95rem; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .notice[hidden] { display: none; }
+.notice.bad { background: var(--danger-soft); color: var(--danger); }
 
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -166,13 +174,17 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   <header>
     <div>
       <h1>Meeting Action Tracker</h1>
-      <p class="sub">Every agreed action gets an owner and a due date.</p>
+      <p class="sub">Every agreed action gets an owner and a due date. Shared with everyone who has this link.</p>
     </div>
-    <div class="today" id="todayLabel"></div>
+    <div class="head-right">
+      <div class="today" id="todayLabel"></div>
+      <div class="sync" id="sync" role="status"><span class="dot" aria-hidden="true"></span><span id="syncText">Connecting…</span></div>
+    </div>
   </header>
 
-  <div class="notice" id="storageNotice" hidden>
-    <span>This browser isn't saving data, so actions will be lost when you close the page.</span>
+  <div class="notice bad" id="errorNotice" hidden>
+    <span id="errorText"></span>
+    <button type="button" class="btn btn-ghost" id="retryBtn">Try again</button>
   </div>
 
   <section class="stats" aria-label="Summary">
@@ -230,14 +242,26 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   <button type="button" id="toastUndo" hidden>Undo</button>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.js"></script>
 <script>
 (function () {
-  const KEY = "meeting-action-tracker-v1";
-  let storageOK = true;
-  let state = { actions: [], examples: false };
+  // Supabase connection. The publishable key is designed to be public;
+  // what it can do is limited by the row level security policies on the table.
+  const SUPABASE_URL = "https://zzqkkecgnrlgxyevwfbx.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_bsSI0sDuAqj4gxWkJlD4Dw_QG3JLeQC";
+  const TABLE = "actions";
+
+  const db = window.supabase && window.supabase.createClient
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+    : null;
+
+  let state = { actions: [] };
+  let loading = true;
   let filter = "all";
-  let lastDeleted = null;
+  let lastDeleted = null;      // { items: [action, ...] } for undo
   let toastTimer = null;
+  let refreshTimer = null;
+  let realtimeOn = false;
 
   // ---------- dates (local, YYYY-MM-DD) ----------
   function isoLocal(d) {
@@ -256,38 +280,84 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   }
   function isOverdue(a) { return !a.done && a.due < todayISO(); }
 
-  // ---------- storage ----------
-  function load() {
+  // ---------- data mapping ----------
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+  function fromRow(r) {
+    return { id: r.id, text: r.text, owner: r.owner, due: r.due, done: r.done, doneAt: r.done_at, example: r.is_example, created: r.created_at };
+  }
+  function toRow(a) {
+    return { id: a.id, text: a.text, owner: a.owner, due: a.due, done: a.done, done_at: a.doneAt || null, is_example: !!a.example, created_at: a.created };
+  }
+
+  // ---------- status + errors ----------
+  const $ = (id) => document.getElementById(id);
+  function setSync(kind, text) {
+    $("sync").className = "sync " + kind;
+    $("syncText").textContent = text;
+  }
+  function showError(msg) {
+    $("errorText").textContent = msg;
+    $("errorNotice").hidden = false;
+  }
+  function clearError() { $("errorNotice").hidden = true; }
+  function errText(e) { return (e && e.message) ? " (" + e.message + ")" : ""; }
+
+  // ---------- server ----------
+  async function fetchAll() {
+    if (!db) throw new Error("The database library didn't load");
+    const { data, error } = await db.from(TABLE).select("*").order("created_at", { ascending: true });
+    if (error) throw error;
+    state.actions = data.map(fromRow);
+  }
+
+  async function refresh() {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) { state = JSON.parse(raw); return; }
-    } catch (e) { storageOK = false; }
-    state = { actions: seed(), examples: true };
-    save();
+      await fetchAll();
+      loading = false;
+      clearError();
+      setSync("live", realtimeOn ? "Live · updates appear automatically" : "Synced");
+    } catch (e) {
+      loading = false;
+      setSync("error", "Not connected");
+      showError("Couldn't load actions from the database. Check your internet connection and try again." + errText(e));
+    }
+    render();
   }
-  function save() {
-    if (!storageOK) return;
-    try { localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch (e) { storageOK = false; }
-    document.getElementById("storageNotice").hidden = storageOK;
+
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(refresh, 300);
   }
-  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-  function seed() {
-    const mk = (text, owner, dueOffset, done) => ({ id: uid(), text, owner, due: addDays(dueOffset), done: !!done, created: Date.now(), example: true });
-    return [
-      mk("Circulate minutes of the planning meeting", "Aisha", -3),
-      mk("Confirm venue booking for the March event", "Aisha", 2),
-      mk("Send updated vendor quotes to the team", "Marcus", -1),
-      mk("Draft volunteer roster for next quarter", "Marcus", 6),
-      mk("Share last month's attendance figures", "Marcus", -5, true),
-      mk("Book follow-up meeting with the partner agency", "Wei Ling", 0),
-      mk("Review the new onboarding checklist", "Wei Ling", 9, true)
-    ];
+
+  // Apply a change on screen straight away, then save it. If saving fails, undo the on-screen change.
+  async function save(op, rollback, failMsg) {
+    try {
+      const { error } = await op();
+      if (error) throw error;
+    } catch (e) {
+      rollback();
+      render();
+      showError(failMsg + " Your change was not saved." + errText(e));
+    }
+  }
+
+  function subscribe() {
+    if (!db) return;
+    db.channel("actions-feed")
+      .on("postgres_changes", { event: "*", schema: "public", table: TABLE }, scheduleRefresh)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") { realtimeOn = true; if (!loading) setSync("live", "Live · updates appear automatically"); }
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") { realtimeOn = false; }
+      });
   }
 
   // ---------- render ----------
-  const $ = (id) => document.getElementById(id);
-  function esc(s) { return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
 
   function dueLabel(a) {
@@ -305,23 +375,20 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     const open = acts.filter(a => !a.done).length;
     const done = acts.length - open;
     const overdue = acts.filter(isOverdue).length;
-    $("openCount").textContent = open;
-    $("doneCount").textContent = done;
-    $("overdueCount").textContent = overdue;
+    $("openCount").textContent = loading ? "–" : open;
+    $("doneCount").textContent = loading ? "–" : done;
+    $("overdueCount").textContent = loading ? "–" : overdue;
     $("overdueStat").classList.toggle("zero", overdue === 0);
     $("progressBar").style.width = acts.length ? Math.round(done / acts.length * 100) + "%" : "0%";
     $("todayLabel").textContent = "Today: " + new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     $("exampleNotice").hidden = !acts.some(a => a.example);
 
-    // owner suggestions
     const owners = [...new Set(acts.map(a => a.owner))].sort((x, y) => x.localeCompare(y));
     $("ownerList").innerHTML = owners.map(o => '<option value="' + esc(o) + '"></option>').join("");
 
-    // filter
     const shown = acts.filter(a =>
       filter === "all" ? true : filter === "open" ? !a.done : filter === "done" ? a.done : isOverdue(a));
 
-    // group by owner (case-insensitive)
     const groups = new Map();
     shown.forEach(a => {
       const k = a.owner.trim().toLowerCase();
@@ -331,7 +398,8 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
 
     const container = $("groups");
     if (!groups.size) {
-      const msg = !acts.length ? "No actions yet. Add the first one from your meeting above."
+      const msg = loading ? "Loading actions…"
+        : !acts.length ? "No actions yet. Add the first one from your meeting above."
         : filter === "overdue" ? "Nothing overdue. Nice work."
         : filter === "done" ? "Nothing ticked off yet."
         : "No open actions. Everything agreed has been done.";
@@ -339,7 +407,6 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
       return;
     }
 
-    // owners with overdue items first, then by name
     const sorted = [...groups.values()].sort((g1, g2) => {
       const o1 = g1.items.filter(isOverdue).length, o2 = g2.items.filter(isOverdue).length;
       return (o2 > 0) - (o1 > 0) || g1.name.localeCompare(g2.name);
@@ -364,9 +431,9 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     const od = isOverdue(a);
     const today = !a.done && a.due === todayISO();
     const cid = "chk-" + a.id;
-    return '<li class="item' + (od ? " is-overdue" : "") + (a.done ? " is-done" : "") + '" data-id="' + a.id + '">' +
-      '<input type="checkbox" class="check" id="' + cid + '"' + (a.done ? " checked" : "") + '>' +
-      '<label for="' + cid + '" style="color:inherit;font-weight:400;font-size:inherit;cursor:pointer">' +
+    return '<li class="item' + (od ? " is-overdue" : "") + (a.done ? " is-done" : "") + '" data-id="' + esc(a.id) + '">' +
+      '<input type="checkbox" class="check" id="' + esc(cid) + '"' + (a.done ? " checked" : "") + '>' +
+      '<label for="' + esc(cid) + '" style="color:inherit;font-weight:400;font-size:inherit;cursor:pointer">' +
         '<span class="text">' + esc(a.text) + '</span>' +
         '<span class="due' + (today ? " today" : "") + '">' + dueLabel(a) + '</span>' +
       '</label>' +
@@ -380,7 +447,20 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     $("toastUndo").hidden = !undo;
     $("toast").hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { $("toast").hidden = true; lastDeleted = null; }, 5000);
+    toastTimer = setTimeout(() => { $("toast").hidden = true; lastDeleted = null; }, 6000);
+  }
+
+  // Remove a set of actions on screen and in the database, with undo.
+  function removeActions(items, msg, failMsg) {
+    if (!items.length) return;
+    const ids = new Set(items.map(a => a.id));
+    state.actions = state.actions.filter(a => !ids.has(a.id));
+    lastDeleted = { items };
+    render();
+    toast(msg, true);
+    save(() => db.from(TABLE).delete().in("id", [...ids]),
+         () => { state.actions = state.actions.concat(items.filter(a => !state.actions.some(x => x.id === a.id))); },
+         failMsg);
   }
 
   // ---------- events ----------
@@ -395,42 +475,53 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
       (!text ? $("actionInput") : !owner ? $("ownerInput") : $("dueInput")).focus();
       return;
     }
-    // reuse existing owner spelling if the name matches
+    if (!db || loading) { $("formError").textContent = "Still connecting to the database. Try again in a moment."; return; }
     const match = state.actions.find(a => a.owner.trim().toLowerCase() === owner.toLowerCase());
-    state.actions.push({ id: uid(), text, owner: match ? match.owner : owner, due, done: false, created: Date.now() });
-    save(); render();
+    const a = { id: uuid(), text, owner: match ? match.owner : owner, due, done: false, doneAt: null, example: false, created: new Date().toISOString() };
+    state.actions.push(a);
+    render();
     $("formError").textContent = "";
     $("actionInput").value = "";
     $("actionInput").focus();
-    toast("Action added for " + (match ? match.owner : owner) + ".");
+    toast("Action added for " + a.owner + ".");
+    save(() => db.from(TABLE).insert(toRow(a)),
+         () => { state.actions = state.actions.filter(x => x.id !== a.id); },
+         "Couldn't add “" + text + "”.");
   });
 
   $("groups").addEventListener("change", (e) => {
     if (!e.target.classList.contains("check")) return;
     const id = e.target.closest("li").dataset.id;
     const a = state.actions.find(x => x.id === id);
-    if (a) { a.done = e.target.checked; a.doneAt = a.done ? Date.now() : null; save(); render(); }
+    if (!a) return;
+    const prev = { done: a.done, doneAt: a.doneAt };
+    a.done = e.target.checked;
+    a.doneAt = a.done ? new Date().toISOString() : null;
+    render();
+    save(() => db.from(TABLE).update({ done: a.done, done_at: a.doneAt }).eq("id", id),
+         () => { a.done = prev.done; a.doneAt = prev.doneAt; },
+         "Couldn't update “" + a.text + "”.");
   });
 
   $("groups").addEventListener("click", (e) => {
     const btn = e.target.closest(".del");
     if (!btn) return;
     const id = btn.closest("li").dataset.id;
-    const idx = state.actions.findIndex(x => x.id === id);
-    if (idx < 0) return;
-    lastDeleted = { item: state.actions[idx], idx };
-    state.actions.splice(idx, 1);
-    save(); render();
-    toast("Action deleted.", true);
+    const a = state.actions.find(x => x.id === id);
+    if (a) removeActions([a], "Action deleted.", "Couldn't delete that action.");
   });
 
   $("toastUndo").addEventListener("click", () => {
     if (!lastDeleted) return;
-    if (Array.isArray(lastDeleted.items)) state.actions = lastDeleted.items;
-    else state.actions.splice(lastDeleted.idx, 0, lastDeleted.item);
+    const items = lastDeleted.items;
     lastDeleted = null;
-    save(); render();
     $("toast").hidden = true;
+    const missing = items.filter(a => !state.actions.some(x => x.id === a.id));
+    state.actions = state.actions.concat(missing);
+    render();
+    save(() => db.from(TABLE).upsert(missing.map(toRow)),
+         () => { const ids = new Set(missing.map(a => a.id)); state.actions = state.actions.filter(a => !ids.has(a.id)); },
+         "Couldn't restore the deleted actions.");
   });
 
   document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
@@ -440,20 +531,16 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
   }));
 
   $("clearDone").addEventListener("click", () => {
-    const n = state.actions.filter(a => a.done).length;
-    if (!n) { toast("No done actions to clear."); return; }
-    lastDeleted = { items: state.actions.slice() };
-    state.actions = state.actions.filter(a => !a.done);
-    save(); render();
-    toast("Cleared " + n + " done " + (n === 1 ? "action" : "actions") + ".", true);
+    const items = state.actions.filter(a => a.done);
+    if (!items.length) { toast("No done actions to clear."); return; }
+    removeActions(items, "Cleared " + items.length + " done " + (items.length === 1 ? "action" : "actions") + ".", "Couldn't clear done actions.");
   });
 
   $("clearExamples").addEventListener("click", () => {
-    lastDeleted = { items: state.actions.slice() };
-    state.actions = state.actions.filter(a => !a.example);
-    save(); render();
-    toast("Examples removed.", true);
+    removeActions(state.actions.filter(a => a.example), "Examples removed.", "Couldn't remove the examples.");
   });
+
+  $("retryBtn").addEventListener("click", () => { clearError(); setSync("", "Connecting…"); refresh(); });
 
   $("copyBtn").addEventListener("click", async () => {
     const open = state.actions.filter(a => !a.done);
@@ -471,15 +558,22 @@ li.item.is-done .text { text-decoration: line-through; color: var(--muted); }
     catch (e) { toast("Couldn't copy here. Try again from your browser directly."); }
   });
 
-  // refresh overdue status if the page stays open past midnight
-  let lastDay = todayISO();
-  setInterval(() => { if (todayISO() !== lastDay) { lastDay = todayISO(); render(); } }, 60000);
+  // Catch up when the tab comes back into view, and re-check overdue status over time.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scheduleRefresh(); });
+  setInterval(refresh, 60000);
 
-  // default due date: one week out
+  // ---------- start ----------
   $("dueInput").value = addDays(7);
-  load();
-  document.getElementById("storageNotice").hidden = storageOK;
   render();
+  if (!db) {
+    loading = false;
+    setSync("error", "Not connected");
+    showError("The database library didn't load. Check your internet connection and reload the page.");
+    render();
+  } else {
+    refresh();
+    subscribe();
+  }
 })();
 </script>
 </body>
